@@ -3,14 +3,15 @@ const webhook = require('webex-node-bot-framework/webhook');
 const axios = require('axios');
 const https = require('https');
 const qs = require('qs');
-const libxmljs = require('libxmljs');
-
+const parseString = require('xml2js').parseString;
 const express = require('express');
 const bodyParser = require('body-parser');
+const getMainCard = require('./mainCard');
+const getSupportCard = require('./supportCard');
+
 const app = express();
 app.use(bodyParser.json());
 
-const parseString = require('xml2js').parseString;
 
 const axiosInstance = axios.create({
     httpsAgent: new https.Agent({
@@ -21,7 +22,7 @@ const axiosInstance = axios.create({
 
 // framework options
 let config = {
-    webhookUrl: 'https://0e6ed6b13ce0.ngrok.io/framework',
+    webhookUrl: 'https://6aeaf4dc1d65.ngrok.io/framework',
     token: 'ZjY5MmI4MTctZmRhMi00MzczLWFmODAtZTM1YjExZmIxZWFkMWVjMDNkMjYtYzk2_P0A1_2264604f-987c-4289-92bf-674df1bbbb86',
     port: 80
 };
@@ -46,6 +47,8 @@ framework.on('spawn', function (bot, id, addedBy) {
         // don't say anything here or your bot's spaces will get 
         // spammed every time your server is restarted
         console.log(`Framework created an object for an existing bot in a space called: ${bot.room.title}`);
+        //console.log(getMainCard(bot.room.title));
+        bot.sendCard(getMainCard(bot.room.title));
         // bot.say('Hi Subscriber, I am live now!!`');
         // bot.sendCard(cardBody,
         //     "not working",
@@ -65,85 +68,95 @@ framework.on('spawn', function (bot, id, addedBy) {
 // Process a submitted card
 framework.on('attachmentAction', function (bot, trigger) {
     //console.log(trigger.attachmentAction.inputs);
-    let data = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns="http://www.cisco.com/AXL/API/12.5">  
-    <soapenv:Header/>   
-    <soapenv:Body>     
-    <ns:executeSQLQuery>      
-    <sql>        
-    select d.name, d.description, n.dnorpattern as DN from device as d,\nnumplan as n, devicenumplanmap as dnpm where dnpm.fkdevice = d.pkid and
-    dnpm.fknumplan = n.pkid and d.tkclass = 1 and n.dnorpattern=\'${(trigger.attachmentAction.inputs.action == 'login_custom_user') ? trigger.attachmentAction.inputs.device_number_else : trigger.attachmentAction.inputs.device_number_self}\'</sql>      
-    </ns:executeSQLQuery>   
-    </soapenv:Body>
-    </soapenv:Envelope>`;
+    if(trigger.attachmentAction.inputs.action=='get_login_card'){
+        bot.sendCard(loginCardBody);
+    }else if(trigger.attachmentAction.inputs.action=='get_support_card'){
+        bot.sendCard(getSupportCard(bot.room.title));
+    }else if(trigger.attachmentAction.inputs.action=='get_train_tb_card'){
 
-    let config = {
-        method: 'post',
-        url: 'https://198.18.133.3:8443/axl/',
-        headers: {
-            'SOAPAction': 'CUCM:DB ver=12.5 executeSQLQuery',
-            'Content-Type': 'application/javascript',
-            'Authorization': 'Basic YWRtaW5pc3RyYXRvcjpkQ2xvdWQxMjMh',
-            'Cookie': 'JSESSIONID=CDC79CBD13827540DA32240477A11599; JSESSIONIDSSO=CE65958B18D72ABF40360E5B36B4183F'
-        },
-        data: data
-    };
-
-    // bot.reply(trigger.attachmentAction, `\n${JSON.stringify(trigger.attachmentAction.inputs, null, 2)}`);
-    //console.log(/(.+)@/g.exec(trigger.person.emails[0])[1]);
-    axiosInstance(config)
-        .then(function (response) {
-            //console.log(JSON.stringify(response.data));
-            parseString(response.data, (err, result) => {
-                console.log(JSON.stringify(result,null,0));
-                console.log ();
-                let queryResultLength = result['soapenv:Envelope']['soapenv:Body'][0]['ns:executeSQLQueryResponse'][0]['return'][0].length;
-                if (queryResultLength==0) {
-                    bot.reply(trigger.attachmentAction, 'No Device Found with the provided Phone number. Please check again');
-                }
-                phoneId = result['soapenv:Envelope']['soapenv:Body'][0]['ns:executeSQLQueryResponse'][0]['return'][0]['row'][0].name[0];
-                userId = (trigger.attachmentAction.inputs.action == 'login_custom_user') ? trigger.attachmentAction.inputs.username : /(.+)@/g.exec(trigger.person.emails[0])[1]
-
-                let data = qs.stringify({
-                    'xml': `<request>\n<appInfo>\n<appID>administrator</appID>\n<appCertificate>dCloud123!</appCertificate>\n</appInfo>\n<login>\n<deviceName>${phoneId}</deviceName>\n<userID>${userId}</userID>\n<deviceProfile>${'DP-' + userId}</deviceProfile>\n<exclusiveDuration>\n<time>60</time>\n</exclusiveDuration>\n</login>\n</request>`
-                });
-                let config = {
-                    method: 'post',
-                    url: 'https://198.18.133.3:8443/emservice/EMServiceServlet',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    data: data
-                };
-                //console.log(data);
-                axiosInstance(config)
-                    .then(function (response) {
-                        //console.log(JSON.stringify(response.data));
-                        //bot.reply(trigger.attachmentAction, `\n${JSON.stringify(trigger.attachmentAction.inputs, null, 2)}`);
-                        //console.log(response.data);
-                        parseString(response.data,(err,result)=>{
-                            //console.log(JSON.stringify(result,null,0));
-                            if(result.response.failure){
-                                error = result['response'].failure[0].error[0]._;
-                                //console.log('Login Error: '+error)
-                                bot.reply(trigger.attachmentAction, 'Login Unsuccessful: '+error);
-
-                            }else{
-                                //bot.reply(trigger.attachmentAction,'User Logged in Successful')
-                                //console.log('User Logged in Successful');
-                                bot.reply(trigger.attachmentAction, 'User Logged in Successful');
-                            }
-                        })
-                        
-                    })
-                    .catch(function (error) {
-                        console.log(error);
+    }else if(trigger.attachmentAction.inputs.action == 'login_custom_user' || trigger.attachmentAction.inputs.action=='login_self'){
+        let data = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns="http://www.cisco.com/AXL/API/12.5">  
+        <soapenv:Header/>   
+        <soapenv:Body>     
+        <ns:executeSQLQuery>      
+        <sql>        
+        select d.name, d.description, n.dnorpattern as DN from device as d,\nnumplan as n, devicenumplanmap as dnpm where dnpm.fkdevice = d.pkid and
+        dnpm.fknumplan = n.pkid and d.tkclass = 1 and n.dnorpattern=\'${(trigger.attachmentAction.inputs.action == 'login_custom_user') ? trigger.attachmentAction.inputs.device_number_else : trigger.attachmentAction.inputs.device_number_self}\'</sql>      
+        </ns:executeSQLQuery>   
+        </soapenv:Body>
+        </soapenv:Envelope>`;
+    
+        let config = {
+            method: 'post',
+            url: 'https://198.18.133.3:8443/axl/',
+            headers: {
+                'SOAPAction': 'CUCM:DB ver=12.5 executeSQLQuery',
+                'Content-Type': 'application/javascript',
+                'Authorization': 'Basic YWRtaW5pc3RyYXRvcjpkQ2xvdWQxMjMh',
+                'Cookie': 'JSESSIONID=CDC79CBD13827540DA32240477A11599; JSESSIONIDSSO=CE65958B18D72ABF40360E5B36B4183F'
+            },
+            data: data
+        };
+    
+        // bot.reply(trigger.attachmentAction, `\n${JSON.stringify(trigger.attachmentAction.inputs, null, 2)}`);
+        //console.log(/(.+)@/g.exec(trigger.person.emails[0])[1]);
+        axiosInstance(config)
+            .then(function (response) {
+                //console.log(JSON.stringify(response.data));
+                parseString(response.data, (err, result) => {
+                    console.log(JSON.stringify(result,null,0));
+                    console.log ();
+                    let queryResultLength = result['soapenv:Envelope']['soapenv:Body'][0]['ns:executeSQLQueryResponse'][0]['return'][0].length;
+                    if (queryResultLength==0) {
+                        bot.reply(trigger.attachmentAction, 'No Device Found with the provided Phone number. Please check again');
+                    }
+                    phoneId = result['soapenv:Envelope']['soapenv:Body'][0]['ns:executeSQLQueryResponse'][0]['return'][0]['row'][0].name[0];
+                    userId = (trigger.attachmentAction.inputs.action == 'login_custom_user') ? trigger.attachmentAction.inputs.username : /(.+)@/g.exec(trigger.person.emails[0])[1]
+    
+                    let data = qs.stringify({
+                        'xml': `<request>\n<appInfo>\n<appID>administrator</appID>\n<appCertificate>dCloud123!</appCertificate>\n</appInfo>\n<login>\n<deviceName>${phoneId}</deviceName>\n<userID>${userId}</userID>\n<deviceProfile>${'DP-' + userId}</deviceProfile>\n<exclusiveDuration>\n<time>60</time>\n</exclusiveDuration>\n</login>\n</request>`
                     });
+                    let config = {
+                        method: 'post',
+                        url: 'https://198.18.133.3:8443/emservice/EMServiceServlet',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        data: data
+                    };
+                    //console.log(data);
+                    axiosInstance(config)
+                        .then(function (response) {
+                            //console.log(JSON.stringify(response.data));
+                            //bot.reply(trigger.attachmentAction, `\n${JSON.stringify(trigger.attachmentAction.inputs, null, 2)}`);
+                            //console.log(response.data);
+                            parseString(response.data,(err,result)=>{
+                                //console.log(JSON.stringify(result,null,0));
+                                if(result.response.failure){
+                                    error = result['response'].failure[0].error[0]._;
+                                    //console.log('Login Error: '+error)
+                                    bot.reply(trigger.attachmentAction, 'Login Unsuccessful: '+error);
+    
+                                }else{
+                                    //bot.reply(trigger.attachmentAction,'User Logged in Successful')
+                                    //console.log('User Logged in Successful');
+                                    bot.reply(trigger.attachmentAction, 'User Logged in Successful');
+                                }
+                            })
+                            
+                        })
+                        .catch(function (error) {
+                            console.log(error);
+                        });
+                })
             })
-        })
-        .catch(function (error) {
-            console.log(error);
-            console.log('AXL API request failed');
-        });
+            .catch(function (error) {
+                console.log(error);
+                console.log('AXL API request failed');
+            });
+    }
+
+
 
 });
 
@@ -158,7 +171,7 @@ framework.hears('hello', function (bot, trigger) {
 
 framework.hears(/\blogin\b/gim, function (bot, trigger) {
     if (!responded) {
-        bot.sendCard(cardBody,
+        bot.sendCard(loginCardBody,
             "not working",
         );
         responded = true;
@@ -193,7 +206,7 @@ process.on('SIGINT', function () {
 });
 
 
-let cardBody = {
+let loginCardBody = {
     "type": "AdaptiveCard",
     "body": [
         {
@@ -216,7 +229,7 @@ let cardBody = {
                     "items": [
                         {
                             "type": "TextBlock",
-                            "text": "HWL Ebesworth Lawyers",
+                            "text": "HWL Ebsworth Lawyers",
                             "weight": "Lighter",
                             "color": "Accent"
                         },
@@ -291,11 +304,10 @@ let cardBody = {
                                                                         "placeholder": "the # displayed on device",
                                                                         "isRequired": true,
                                                                         "errorMessage": "Only Allow Letters",
-                                                                        "regex": "[a-zA-Z]+",
+                                                                       // "regex": "[a-zA-Z]+",
                                                                         "$data": "${$root.creator.name}",
                                                                         "maxLength": 20,
-                                                                        "id": "device_number_self",
-                                                                        "style": "Tel"
+                                                                        "id": "device_number_self"
                                                                     }
                                                                 ]
                                                             }
@@ -395,9 +407,8 @@ let cardBody = {
                                                                         "placeholder": "the # displayed on device",
                                                                         "isRequired": true,
                                                                         "errorMessage": "Only Allow Letters",
-                                                                        "regex": "[a-zA-Z]+",
-                                                                        "id": "device_number_else",
-                                                                        "style": "Tel"
+       //                                                                 "regex": "[a-zA-Z]+",
+                                                                        "id": "device_number_else"
                                                                     }
                                                                 ]
                                                             }
